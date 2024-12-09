@@ -209,23 +209,24 @@
 }
 
 #share-button {
-  width: 100%;
-  font-size: 28px;
-
-  font-family: "VT323", monospace;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
+  cursor: pointer;
+  background-color: #dc3545;
   color: white;
   border: none;
-  border-radius: 32px;
-  background-color: rgb(227, 42, 54);
+  padding: 10px;
+  border-radius: 5px;
+  width: 100%;
+  font-family: inherit;
+  font-size: inherit;
 }
 
 #share-button:hover {
-  background-color: rgba(227, 42, 54, 0.8);
+  background-color: #c82333;
+}
+
+#share-button:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
 }
 
 .share-icon {

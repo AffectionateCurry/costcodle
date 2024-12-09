@@ -12,6 +12,10 @@ let shakeTimeout;
 let toastTimeout;
 let warningTimeout;
 
+// Add these variables at the top
+let currentGameIndex = 0;
+const games = {}; // Will store all games from games.json
+
 /*
   Global variable constants
 */
@@ -53,7 +57,8 @@ const gameState = JSON.parse(localStorage.getItem("state")) || {
 playGame();
 
 function playGame() {
-  fetchGameData(getGameNumber());
+  currentGameIndex = 0;
+  fetchGameData();
 }
 
 /*
@@ -61,14 +66,28 @@ function playGame() {
 */
 
 //Fetches the current day's game data from the json and starts game
-function fetchGameData(gameNumber) {
+function fetchGameData() {
   fetch("./games.json")
     .then((response) => response.json())
     .then((json) => {
-      productName = json[`game-${gameNumber}`].name;
-      productPrice = json[`game-${gameNumber}`].price;
+      // Store all games
+      Object.assign(games, json);
+      
+      const totalGames = Object.keys(games).length;
+      
+      // Check if we've reached the end of games
+      if (currentGameIndex >= totalGames) {
+        const containerElem = document.getElementById("input-container");
+        containerElem.innerHTML = `<button id="share-button" disabled>No More Games!</button>`;
+        return;
+      }
+      
+      // Get current game data
+      const currentGame = `game-${currentGameIndex + 1}`;
+      productName = games[currentGame].name;
+      productPrice = games[currentGame].price;
       productPrice = Number(productPrice.slice(1, productPrice.length));
-      productImage = json[`game-${gameNumber}`].image;
+      productImage = games[currentGame].image;
 
       initializeGame();
     });
@@ -79,28 +98,17 @@ function fetchGameData(gameNumber) {
 */
 
 function initializeGame() {
-  //Reset game state and track new game if user last played on a previous day
-  if (gameState.gameNumber !== gameNumber) {
-    if (gameState.hasWon === false) {
-      userStats.currentStreak = 0;
-    }
-    gameState.gameNumber = gameNumber;
-    gameState.guesses = [];
-    gameState.hasWon = false;
-    userStats.numGames++;
-
-    localStorage.setItem("stats", JSON.stringify(userStats));
-    localStorage.setItem("state", JSON.stringify(gameState));
-  }
-
+  // Reset game state for new game
+  gameState.gameNumber = currentGameIndex;
+  
+  localStorage.setItem("state", JSON.stringify(gameState));
+  
   displayProductCard();
-
   updateGameBoard();
 
-  if (gameState.guesses.length < 6 && !gameState.hasWon) {
+  // Add event listeners if game is not won
+  if (!gameState.hasWon) {
     addEventListeners();
-  } else {
-    convertToShareButton();
   }
 }
 
@@ -171,16 +179,24 @@ function buttonEventListener() {
 }
 
 function handleInput() {
-  const strippedString = input.value.replaceAll(",", "");
-  const guess = Number(strippedString).toFixed(2);
-
-  if (isNaN(guess) || !strippedString) {
+  const input = document.getElementById("guess-input");
+  const strippedString = input.value.replace(/[^0-9.]/g, ''); // Remove everything except numbers and decimal
+  
+  // Convert to number and fix to 2 decimal places
+  let guess = parseFloat(strippedString);
+  
+  if (isNaN(guess)) {
     displayWarning();
     return;
   }
-
+  
+  // Format to 2 decimal places
+  guess = guess.toFixed(2);
+  
+  // Process the guess
   checkGuess(guess);
-
+  
+  // Clear input after guess
   input.value = "";
 
   function displayWarning() {
@@ -279,9 +295,26 @@ function copyStats() {
 }
 
 function addEventListeners() {
+  // First remove any existing listeners to prevent duplicates
+  removeEventListeners();
+  
+  const input = document.getElementById("guess-input");
+  const buttonInput = document.getElementById("guess-button");
+  
+  // Add the event listeners
   input.addEventListener("keydown", inputEventListener);
   buttonInput.addEventListener("click", buttonEventListener);
 
+  // Reset the input state
+  input.disabled = false;
+  input.value = '';
+  input.setAttribute("placeholder", "Enter a guess...");
+  
+  // Reset the button state
+  buttonInput.disabled = false;
+  buttonInput.classList.add("active");
+
+  // Add focus/blur handlers
   input.addEventListener("focus", () => {
     input.setAttribute("placeholder", "0.00");
   });
@@ -291,12 +324,18 @@ function addEventListeners() {
 }
 
 function removeEventListeners() {
-  buttonInput.setAttribute("disabled", "");
-  buttonInput.classList.remove("active");
-  input.setAttribute("disabled", "");
-  input.setAttribute("placeholder", "Game Over!");
-  input.removeEventListener("keydown", inputEventListener);
-  buttonInput.removeEventListener("click", buttonEventListener);
+  const input = document.getElementById("guess-input");
+  const buttonInput = document.getElementById("guess-button");
+  
+  if (input) {
+    input.removeEventListener("keydown", inputEventListener);
+    input.removeEventListener("focus", () => {});
+    input.removeEventListener("blur", () => {});
+  }
+  
+  if (buttonInput) {
+    buttonInput.removeEventListener("click", buttonEventListener);
+  }
 }
 
 /*
@@ -306,7 +345,6 @@ function removeEventListeners() {
 
 function checkGuess(guess) {
   const guessObj = { guess, closeness: "", direction: "" };
-
   const percentAway = calculatePercent(guess);
 
   if (Math.abs(percentAway) <= 5) {
@@ -324,9 +362,9 @@ function checkGuess(guess) {
   if (gameState.hasWon) {
     guessObj.direction = "&check;";
   } else if (percentAway < 0) {
-    guessObj.direction = "&uarr;";
+    guessObj.direction = "&uarr;"; // Price is higher
   } else {
-    guessObj.direction = "&darr;";
+    guessObj.direction = "&darr;"; // Price is lower
   }
 
   gameState.guesses.push(guessObj);
@@ -347,28 +385,20 @@ function checkGuess(guess) {
 
 function displayGuess(guess, index = gameState.guesses.length) {
   const guessContainer = document.getElementById(index);
+  guessContainer.innerHTML = ''; // Clear existing content
+  
   const guessValueContainer = document.createElement("div");
   const infoContainer = document.createElement("div");
 
-  guessValueContainer.classList.add(
-    "guess-value-container",
-    "animate__flipInX"
-  );
-
+  guessValueContainer.classList.add("guess-value-container", "animate__flipInX");
   infoContainer.classList.add("guess-direction-container", "animate__flipInX");
 
   guessValueContainer.innerHTML = `$${guess.guess}`;
-
   infoContainer.classList.add(guess.closeness);
   infoContainer.innerHTML = guess.direction;
 
-  guessContainer.classList.add("animate__flipOutX");
-
-  setTimeout(() => {
-    guessContainer.classList.add("transparent-background");
-    guessContainer.appendChild(guessValueContainer);
-    guessContainer.appendChild(infoContainer);
-  }, 500);
+  guessContainer.appendChild(guessValueContainer);
+  guessContainer.appendChild(infoContainer);
 
   updateGuessStat();
 }
@@ -397,7 +427,7 @@ function gameWon() {
   localStorage.setItem("state", JSON.stringify(gameState));
   localStorage.setItem("stats", JSON.stringify(userStats));
   removeEventListeners();
-  convertToShareButton();
+  convertToNextGameButton();
 }
 
 function gameLost() {
@@ -511,4 +541,138 @@ function getGameNumber() {
   let dayDifference = timeDifference / (1000 * 3600 * 24);
 
   return Math.ceil(dayDifference);
+}
+
+// Replace or add this function to load all games
+async function loadGames() {
+    try {
+        const response = await fetch('games.json');
+        const data = await response.json();
+        Object.assign(games, data);
+        loadGame(); // Load the first game
+    } catch (error) {
+        console.error('Error loading games:', error);
+    }
+}
+
+// Add this function to load the next game
+function loadGame() {
+    const gameKeys = Object.keys(games);
+    if (currentGameIndex >= gameKeys.length) {
+        currentGameIndex = 0; // Loop back to start
+    }
+    
+    const currentGame = games[gameKeys[currentGameIndex]];
+    
+    // Update UI with new game
+    document.getElementById('product-image').src = currentGame.image;
+    document.getElementById('product-info').textContent = currentGame.name;
+    
+    // Reset game state
+    productPrice = parseFloat(currentGame.price.replace('$', ''));
+    gameState.guesses = [];
+    gameState.hasWon = false;
+    
+    // Enable input and button
+    const input = document.getElementById('guess-input');
+    const button = document.getElementById('guess-button');
+    
+    input.disabled = false;
+    input.value = '';
+    button.disabled = false;
+    
+    // Re-add event listeners
+    addEventListeners();
+    
+    // Update the game board
+    updateGameBoard();
+}
+
+// Modify the win condition to allow new game
+function handleWin() {
+    // ... existing win logic ...
+    
+    // Add a "Next Game" button
+    const shareButton = document.querySelector('.share-button');
+    shareButton.textContent = 'Next Game';
+    shareButton.onclick = () => {
+        currentGameIndex++;
+        loadGame();
+        shareButton.textContent = 'Share';
+        // Reset share button onclick to original share function if needed
+    };
+}
+
+// Call loadGames() instead of just getting today's game
+document.addEventListener('DOMContentLoaded', loadGames);
+
+// Add new function to handle moving to next game
+function addNextGameButton() {
+  const shareButton = document.getElementById("share-button");
+  if (shareButton) {
+    shareButton.textContent = "Next Game";
+    shareButton.onclick = () => {
+      currentGameIndex++;
+      if (currentGameIndex < Object.keys(games).length) {
+        fetchGameData();
+      } else {
+        shareButton.textContent = "No more games!";
+        shareButton.disabled = true;
+      }
+    };
+  }
+}
+
+// Add new function to create Next Game button
+function convertToNextGameButton() {
+  const containerElem = document.getElementById("input-container");
+  const nextGameButton = document.createElement("button");
+  nextGameButton.setAttribute("id", "share-button"); // Reusing share button styles
+  containerElem.innerHTML = "";
+  nextGameButton.textContent = "Next Game →";
+  
+  nextGameButton.addEventListener("click", () => {
+    currentGameIndex++;
+    resetGameForNext();
+  });
+  
+  containerElem.appendChild(nextGameButton);
+}
+
+// Add new function to handle complete game reset
+function resetGameForNext() {
+  // Clear all guesses
+  for (let i = 1; i <= 6; i++) {
+    const guessContainer = document.getElementById(i);
+    guessContainer.innerHTML = '';
+    guessContainer.className = 'guess-container';
+  }
+
+  // Reset game state
+  gameState.guesses = [];
+  gameState.hasWon = false;
+  
+  // Clear the image container
+  const imageContainer = document.getElementById("image-container");
+  imageContainer.innerHTML = "";
+  
+  // Reset input container to original state
+  const containerElem = document.getElementById("input-container");
+  containerElem.innerHTML = `
+    <div id="text-input-container">
+      <div id="input-label">$</div>
+      <input id="guess-input" type="text" inputmode="decimal" placeholder="Enter a guess...">
+    </div>
+    <div id="button-container">
+      <button id="guess-button" class="active">↵</button>
+    </div>
+  `;
+
+  // Load next game data first
+  fetchGameData();
+  
+  // Add event listeners after DOM is updated
+  setTimeout(() => {
+    addEventListeners();
+  }, 100);
 }
